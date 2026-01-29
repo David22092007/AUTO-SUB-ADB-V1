@@ -1,0 +1,41 @@
+import re
+import json
+
+def extract_video_info(url):    
+    if url:
+        return {"id_video": url}
+    else:
+        return None
+
+def process_urls(file_path):
+    results = []
+    
+    # Đọc file và xử lý từng dòng
+    with open(file_path, 'r', encoding='utf-8') as file:
+        for line in file:
+            url = line.strip()
+            if url:  # Chỉ xử lý các dòng không rỗng
+                video_info = extract_video_info(url)
+                if video_info:
+                    results.append(video_info)
+    
+    return results
+
+def main():
+    input_file = 'shorts_links.txt'
+    output_file = 'sourse_video_infor.json'
+    
+    # Xử lý các URL
+    video_list = process_urls(input_file)
+    
+    # Ghi kết quả ra file JSON
+    with open(output_file, 'w', encoding='utf-8') as json_file:
+        json.dump(video_list, json_file, ensure_ascii=False, indent=2)
+    
+    print(f"Đã xử lý {len(video_list)} URL và lưu kết quả vào {output_file}")
+    
+    # In kết quả ra console để xem
+    print(json.dumps(video_list, ensure_ascii=False, indent=2))
+
+if __name__ == "__main__":
+    main()
