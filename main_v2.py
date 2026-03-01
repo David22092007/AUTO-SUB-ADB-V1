@@ -3,6 +3,7 @@ import sys
 import json
 import uuid
 import time
+import socket
 import yt_dlp
 import ffmpeg
 import random
@@ -32,7 +33,10 @@ import google.oauth2.credentials
 import google.auth.transport.requests
 
 import whisper
+import http.server
+import socketserver
 import moviepy as mp
+
 
 from pydub import AudioSegment
 import librosa
@@ -65,6 +69,37 @@ from vietocr.tool.predictor import Predictor
 logging.basicConfig(filename='dub_movie.log', level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s')
 
+def get_and_use_proxy():
+    # 1. Địa chỉ API lấy proxy của bạn (thay bằng link thật của bạn)
+    api_url = f"https://app.2proxy.vn/api/proxy.php?key=cb32df521c3a1703fbcb64b745668fe3&sukien=listproxy&ma_don_hang=KIU85842"
+
+    try:
+        # Gọi API để lấy thông tin proxy
+        response = requests.get(api_url)
+        response.raise_for_status() # Kiểm tra nếu lỗi kết nối
+        
+        # Chuyển dữ liệu JSON trả về thành List
+        data = response.json() 
+        
+        if data and data[0].get("maloi") == 0:
+            proxy_info = data[0]
+            proxy_str = proxy_info.get("proxy") # Dạng IP:Port:User:Pass
+            
+            # 2. Tách chuỗi proxy để đưa vào định dạng của thư viện requests
+            # Cấu trúc: ip:port:user:pass
+            parts = proxy_str.split(':')
+            ip, port, user, password = parts[0], parts[1], parts[2], parts[3]
+            
+            # Định dạng chuẩn cho Requests: http://user:pass@ip:port
+            proxy_format = f"http://{user}:{password}@{ip}:{port}"
+            return proxy_format
+            
+        else:
+            print(f"[-] Lỗi từ API: {data[0].get('msg', 'Không xác định')}")
+
+    except Exception as e:
+        print(f"[!] Có lỗi xảy ra: {e}")
+
 def median(danh_sach):
     danh_sach_sap_xep = sorted(danh_sach)
     n = len(danh_sach_sap_xep)
@@ -90,37 +125,36 @@ def group_consecutive_times(times, threshold_ms=50):
     groups.append(current_group)
     return groups
 def save_video_douyin(url):
-    while True:
-        print ('        LẤY LINK TẢI VIDEO DOUYIN TỪ TRANG TWDOWN.ONLINE ... ')
-        headers = {
-            'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
-            'accept-language': 'en-US,en;q=0.9',
-            'cache-control': 'max-age=0',
-            'priority': 'u=0, i',
-            'sec-ch-ua': '"Google Chrome";v="143", "Chromium";v="143", "Not A(Brand";v="24"',
-            'sec-ch-ua-mobile': '?0',
-            'sec-ch-ua-platform': '"Windows"',
-            'sec-fetch-dest': 'document',
-            'sec-fetch-mode': 'navigate',
-            'sec-fetch-site': 'none',
-            'sec-fetch-user': '?1',
-            'upgrade-insecure-requests': '1',
-            'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36',
-            #'cookie': 's_id=JsS0bHBOOOwNbhutoOnzqygq6uZnqZ76asZkHZtf; fpestid=ug___VKqwt9ta_RROa68QV_FLUYmWhXTFaE8DUZKbvGaoP2ClSvua2i1bHSBvkzg6PhgUQ; __gads=ID=ae1597f5e1f5579c:T=1765787960:RT=1765788511:S=ALNI_MatiEYcqO41QzVTXYjjM-1O_Ztx-Q; __gpi=UID=000011cb2a0356f0:T=1765787960:RT=1765788511:S=ALNI_Mb5EsWitPBPKnb3jaTh3QqIVrs2fg; __eoi=ID=8019400a96b04078:T=1765787960:RT=1765788511:S=AA-AfjZGG7YsfY3H3iPJO9x2tyQs; FCCDCF=%5Bnull%2Cnull%2Cnull%2Cnull%2Cnull%2Cnull%2C%5B%5B32%2C%22%5B%5C%224219edc5-2be2-4679-ab3c-fb9298fd30f1%5C%22%2C%5B1765787961%2C421000000%5D%5D%22%5D%5D%5D; FCNEC=%5B%5B%22AKsRol-ue_RLQwfvtkBdT_PFJmspkMkg_t2mA61o2cnnulXrsmQMrnJdxQ_LuTKwvDcW4_QlGLme96Mci9ldg7uyBzQZ8B2N6_-PpszgLjVEztyjOnyyLW_Rs3-ad9q_mftMQ3PytoiXkohnbXOk1cwGgFVEIYBqow%3D%3D%22%5D%5D; XSRF-TOKEN=eyJpdiI6ImtwTFpmYnR6ZU5iRncyb2xPc3duQkE9PSIsInZhbHVlIjoiTFRKSGZrT05NTmo4MGZhUjh6b3BBQm5jbVl2dnhIeG1vOWhRbmdXUlVBWnhvTXZoT2xBTlRyQkNwRTlzd2x3NiIsIm1hYyI6IjQ4YzM1MDdiYmJhZDRjZDdlNDU2ZTU2OGMxNjc5MDhkYWFlZDA2M2IxOWU2ZGE0ZWJjMWU4MjkzNjA5N2E4NzcifQ%3D%3D',
-        }
-
-        response = requests.get(f'https://downloader.twdown.online/search?search={url}',
-            headers=headers,
-        )
-        soup=BeautifulSoup(response.text, 'html.parser');link=''
-        five_links = soup.find_all('a')
-        for i in five_links:
-            if (i['href']).find('https://downloader.twdown.online?ref=&title=') >=0:
-                link=i['href']
-                break   
-        if link != '':
-            break    
-        time.sleep(60)  
+    #while True:
+    print ('        LẤY LINK TẢI VIDEO DOUYIN TỪ TRANG TWDOWN.ONLINE ... ')
+    headers = {
+        'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+        'accept-language': 'en-US,en;q=0.9',
+        'cache-control': 'max-age=0',
+        'priority': 'u=0, i',
+        'sec-ch-ua': '"Google Chrome";v="143", "Chromium";v="143", "Not A(Brand";v="24"',
+        'sec-ch-ua-mobile': '?0',
+        'sec-ch-ua-platform': '"Windows"',
+        'sec-fetch-dest': 'document',
+        'sec-fetch-mode': 'navigate',
+        'sec-fetch-site': 'none',
+        'sec-fetch-user': '?1',
+        'upgrade-insecure-requests': '1',
+        'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36',
+        #'cookie': 's_id=JsS0bHBOOOwNbhutoOnzqygq6uZnqZ76asZkHZtf; fpestid=ug___VKqwt9ta_RROa68QV_FLUYmWhXTFaE8DUZKbvGaoP2ClSvua2i1bHSBvkzg6PhgUQ; __gads=ID=ae1597f5e1f5579c:T=1765787960:RT=1765788511:S=ALNI_MatiEYcqO41QzVTXYjjM-1O_Ztx-Q; __gpi=UID=000011cb2a0356f0:T=1765787960:RT=1765788511:S=ALNI_Mb5EsWitPBPKnb3jaTh3QqIVrs2fg; __eoi=ID=8019400a96b04078:T=1765787960:RT=1765788511:S=AA-AfjZGG7YsfY3H3iPJO9x2tyQs; FCCDCF=%5Bnull%2Cnull%2Cnull%2Cnull%2Cnull%2Cnull%2C%5B%5B32%2C%22%5B%5C%224219edc5-2be2-4679-ab3c-fb9298fd30f1%5C%22%2C%5B1765787961%2C421000000%5D%5D%22%5D%5D%5D; FCNEC=%5B%5B%22AKsRol-ue_RLQwfvtkBdT_PFJmspkMkg_t2mA61o2cnnulXrsmQMrnJdxQ_LuTKwvDcW4_QlGLme96Mci9ldg7uyBzQZ8B2N6_-PpszgLjVEztyjOnyyLW_Rs3-ad9q_mftMQ3PytoiXkohnbXOk1cwGgFVEIYBqow%3D%3D%22%5D%5D; XSRF-TOKEN=eyJpdiI6ImtwTFpmYnR6ZU5iRncyb2xPc3duQkE9PSIsInZhbHVlIjoiTFRKSGZrT05NTmo4MGZhUjh6b3BBQm5jbVl2dnhIeG1vOWhRbmdXUlVBWnhvTXZoT2xBTlRyQkNwRTlzd2x3NiIsIm1hYyI6IjQ4YzM1MDdiYmJhZDRjZDdlNDU2ZTU2OGMxNjc5MDhkYWFlZDA2M2IxOWU2ZGE0ZWJjMWU4MjkzNjA5N2E4NzcifQ%3D%3D',
+    }
+    response = requests.get(f'https://downloader.twdown.online/search?search={url}',
+        headers=headers,
+    )
+    soup=BeautifulSoup(response.text, 'html.parser');link=''
+    five_links = soup.find_all('a')
+    for i in five_links:
+        if (i['href']).find('https://downloader.twdown.online?ref=&title=') >=0:
+            link=i['href']
+            break   
+    #if link != '':
+            
+    #time.sleep(60)  
     print ('LINK VIDEO DOWLOAD DOUYIN LẤY ĐƯỢC:', link.split('=')[3])
     headers = {
         'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
@@ -408,7 +442,7 @@ def extract_transcript(input_video_path, output_dir, output_json_path, source_la
     output_path = os.path.join(output_dir, 'original_voice', 'main_stream.wav')
     
     try:
-        run_threads(audio_files_path, output_json_path, temp_dir, srt_subtitle_output_path, source_language, metadata_list, num_threads=3)
+        run_threads(audio_files_path, output_json_path, temp_dir, srt_subtitle_output_path, source_language, metadata_list, num_threads=2)
         print("Completed Speech-to-Text Conversion")
         output_json = {"segments": metadata_list}
         with open(output_json_path, 'w', encoding='utf-8') as f:
@@ -516,17 +550,21 @@ class GeminiTranslationManager:
         try:
             prompt = (
                 """
-                -Bạn là một công cụ dịch thuật. Nhiệm vụ của bạn đoạn có nội dung là làm vlog giữa đại ca và tiểu uyên (*em gái) và yêu cầu cụ thể cho cách dịch là:
+                -Bạn là một công cụ dịch thuật. Nhiệm vụ của bạn đoạn có nội dung là về cứu hộ động vật và yêu cầu cụ thể cho cách dịch là:
+                -0. **Phong cách nhẹ nhàng, trầm ấm**
                 -1. **Không được giữ lại bất kỳ ký tự gốc nào của văn bản gốc (ví dụ tiếng Trung, tiếng Anh...) trong kết quả.**
                 -2. **Một số tên được dịch không hay bạn có thể biến tên nhân vật theo phong cách Trung Hoa cổ trang, sử dụng cấu trúc "Tiểu + [Tên Nhân Vật]" . Mỗi tên cần thể hiện tính cách, ngoại hình, hoặc vai trò của nhân vật.
-                -3. **Tôi nhấn mạnh lại một điểm phải giữ nguyên định dạng gốc . Ví dụ về một lỗi mà bạn thường sai  00:01 nhưng phải điền là 00:00:01,000 .Hãy chú ý vào những lỗi nhỏ đó.
-                -4. **Hãy giữ nguyên định dạng tệp .srt. Không thêm bất kỳ câu dẫn hay giải thích nào, chỉ trả về nội dung của tệp. Ưu tiên sử dụng các từ đồng nghĩa ngắn nhất phù hợp với ngữ cảnh. Không thêm các danh từ riêng đặc biệt (ngoại trừ ‘tôi’ và ‘bạn’)
+                -3. **Né các từ vi phạm trong chính sách của tiktok**
+                -4. **Tôi nhấn mạnh lại một điểm phải giữ nguyên định dạng gốc . Ví dụ về một lỗi mà bạn thường sai  00:01 nhưng phải điền là 00:00:01,000 .Hãy chú ý vào những lỗi nhỏ đó.
+                -5. **Hãy giữ nguyên định dạng tệp .srt. Không thêm bất kỳ câu dẫn hay giải thích nào, chỉ trả về nội dung của tệp. Ưu tiên sử dụng các từ đồng nghĩa ngắn nhất phù hợp với ngữ cảnh. Không thêm các danh từ riêng đặc biệt (ngoại trừ ‘tôi’ và ‘bạn’)
+                -6. **Hãy dịch sao cho số lượng từ tiếng Việt tương đương hoặc ít hơn số từ tiếng gốc để đảm bảo tốc độ nói tự nhiên.**
+                -7. **Nếu bản dịch tiếng Việt quá dài so với câu gốc, yêu cầu  dịch ngắn gọn hơn.**
                 -LƯU Ý. **Có số chổ là do cách phát âm & những từ đồng nghĩa làm cho khi dịch câu trở nên sai các phương pháp về từ như sai logic ,sai ngữ pháp , sai cách dùng từ .Bạn hãy xem và chỉnh sữa những điểm đó lại bằng trí tuệ của bạn.Không cần phải chú thích gì cả 
         
                 Kết quả dịch (giữ nguyên định dạng thay thế văn bản gốc bằng văn bản đã dịch không thêm gì khác):
                 """
             )            
-            for name_model in ['gemini-1.5-flash','gemini-2.0-flash-lite','gemini-2.5-flash','gemini-2.5-flash-lite',"gemini-3-flash-preview"]:
+            for name_model in ['gemini-1.5-flash','gemini-2.5-pro','gemini-2.0-flash-lite','gemini-2.5-flash','gemini-2.5-flash-lite',"gemini-3-flash-preview"]:
                 try:
                     response = client.models.generate_content(
                         model=name_model,
@@ -534,8 +572,7 @@ class GeminiTranslationManager:
                     ).text
                     if response is not None:
                         if response.find("'''") >=0:
-                            
-                            return None
+                            None
                         else:
                             return response   
                     print (api_key,' ---',name_model)                                                                         
@@ -583,22 +620,49 @@ def translate_with_gemini(api_keys, segment_groups, target_language, output_sub_
 #-------------------------------------------------
 
 def speed_up_video(input_path, speed, output_path):
-    subprocess.run([
-        'ffmpeg', '-i', input_path,
-        '-y',
-        '-filter:a', f'atempo={speed:.2f}', # Format số thực để tránh lỗi định dạng
-        '-vn',
-        output_path
-    ], check=True, capture_output=True) # capture_output giúp tránh tràn log
+    # --- KHỐNG CHẾ CỨNG KHOẢNG AN TOÀN ---
+    # Không để speed nhỏ hơn 0.5 (tránh lỗi FFmpeg)
+    # Không để speed lớn hơn 4.0 (nhanh quá cũng không nghe được gì)
+    safe_speed = max(1, min(4, speed))
+    
+    if safe_speed > 2.0:
+        filter_str = f"atempo=2.0,atempo={safe_speed/2:.2f}"
+    elif safe_speed < 0.5:
+        # Đoạn này thực ra safe_speed đã là 0.5 nhờ hàm max ở trên
+        # Nhưng viết lại cho chắc chắn
+        filter_str = "atempo=0.5"
+    else:
+        filter_str = f"atempo={safe_speed:.2f}"
 
-def get_duration(input_path):
+    try:
+        subprocess.run([
+            'ffmpeg', '-i', input_path,
+            '-y',
+            '-filter:a', filter_str,
+            '-vn',
+            output_path
+        ], check=True, capture_output=True)
+    except subprocess.CalledProcessError as e:
+        print(f"❌ FFmpeg error tại {input_path}: {e.stderr.decode()}")
+        # Nếu vẫn lỗi thì copy file gốc qua để không làm hỏng chuỗi xử lý video sau này
+        import shutil
+        shutil.copy(input_path, output_path)
+
+def get_duration(file_path):
+    if not os.path.exists(file_path) or os.path.getsize(file_path) == 0:
+        return 0.0 # Trả về 0 thay vì báo lỗi
+    
     cmd = [
-        'ffprobe', '-v', 'error',
-        '-show_entries', 'format=duration',
-        '-of', 'default=noprint_wrappers=1:nokey=1',
-        input_path
+        'ffprobe', '-v', 'error', '-show_entries', 'format=duration',
+        '-of', 'default=noprint_wrappers=1:nokey=1', file_path
     ]
-    return float(subprocess.check_output(cmd))
+    try:
+        result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        if result.returncode == 0:
+            return float(result.stdout.strip())
+    except:
+        pass
+    return 0.0
 
 def process_segment_dubbing(start_time, end_time, segment_index, translated_text, target_language, temp_dir, api_keys, translate_mode):
     os.makedirs(temp_dir, exist_ok=True)
@@ -614,8 +678,9 @@ def process_segment_dubbing(start_time, end_time, segment_index, translated_text
 
                 except Exception as e:
                     logging.error(f"Edge TTS error: {e}")
-            elif translate_mode == 'fpt':                
-                fpt_tts(translated_text, final_audio_path, duration_ms/1000,  api_keys, speed='1')
+            elif translate_mode == 'fpt' or translate_mode == 'vclip':  
+                #translated_text=translated_text.replace(' ','')              
+                fpt_tts(translate_mode,translated_text, final_audio_path, duration_ms/1000,  api_keys, speed='1')  
         else:
             AudioSegment.silent(duration=duration_ms).export(final_audio_path, format="mp3")
         
@@ -668,35 +733,39 @@ def check_volume_of_file(file_audio_path, volume):
     return True
 
 async def generate_tts_with_pitch_and_rate(pitch, output_path, text, voice, duration_ms):
-    # Tạo tên file tạm khác với output_path
     temp_base_path = output_path.replace('.mp3', '_base.mp3') 
     
     try:
-        # 1. Tạo file gốc từ edge-tts
         communicate = edge_tts.Communicate(text=text, voice=voice, pitch=pitch)
         await communicate.save(temp_base_path)
         
-        # 2. Tính toán tốc độ
+        # Lấy thời lượng thực tế của file AI vừa đọc
         duration_seconds = get_duration(temp_base_path)
-        target_duration_seconds = float(duration_ms) / 1000
-        calculated_speed = float(duration_seconds) / target_duration_seconds
+        # Thời lượng tối đa cho phép (ms chuyển sang s)
+        target_duration_seconds = float(duration_ms) / 1000 
         
-        # Giới hạn speed của atempo (0.5 - 2.0)
-        final_speed = max(0.5, min(3.0, calculated_speed))
+        # CƠ CHẾ QUAN TRỌNG: 
+        # Nếu AI đọc dài hơn thời gian cho phép (nói không kịp)
+        if duration_seconds > target_duration_seconds:
+            # Tính tốc độ cần thiết để ép nó vừa khít
+            calculated_speed = duration_seconds / target_duration_seconds
+            # Thêm 5% an toàn để chắc chắn không chạm vào đoạn sau
+            calculated_speed *= 1.05 
+            print(f"⚠️ Nói không kịp! Đang ép tốc độ lên: {calculated_speed:.2f}x")
+        else:
+            # Nếu AI đọc nhanh hơn, giữ tốc độ 1.0 (hoặc tùy chỉnh nếu muốn đọc chậm lại)
+            calculated_speed = 1.0
+            
+        # Giới hạn speed tối đa (ví dụ 3.0x để tránh tiếng bị biến dạng quá mức)
+        final_speed = min(3.0, calculated_speed)
         
-        # 3. Chạy FFmpeg (Lúc này input và output đã khác nhau)
-        try:
-            speed_up_video(temp_base_path, final_speed, output_path)
-            print(f"Thành công: {output_path} (Speed: {final_speed:.2f})")
-        except Exception as e:
-            logging.error(f"FFmpeg Error: {e}")
-        finally:
-            # 4. Xóa file tạm sau khi xong để sạch ổ cứng
-            if os.path.exists(temp_base_path):
-                os.remove(temp_base_path)
+        speed_up_video(temp_base_path, final_speed, output_path)
                 
     except Exception as e:
-        print(f"Error: {str(e)}")
+        print(f"Lỗi TTS: {str(e)}")
+    finally:
+        if os.path.exists(temp_base_path):
+            os.remove(temp_base_path)
 
 async def text_api_to_speech(translated_text, output_path, duration_ms, gender='Female'):
     print('***************************************\n', translated_text, output_path)
@@ -705,72 +774,146 @@ async def text_api_to_speech(translated_text, output_path, duration_ms, gender='
     pitch = "-0Hz"
     await generate_tts_with_pitch_and_rate(pitch, output_path, translated_text, voice, duration_ms/1000)
 
-def fpt_tts(text, output_path, duration_ms, api_keys, speed, voice_name='banmai'):
+def ai_vclip_voice(api_key,text):
+    print ('CONTENT LÀ',text)
+    headers = {
+        'Authorization': 'Bearer '+str(api_key),
+        'Content-Type': 'application/json',
+    }
+
+    json_data = {
+        'method': 'ttsLongText',
+        'input': {
+            'text': text,
+            'userVoiceId': '8VXsCLxU7Pn55ADXQc6sAb',
+            'speed': 1.0,
+        },
+    }
+    while True:
+        response = json.loads(requests.post('https://api-tts.vclip.io/json-rpc', headers=headers, json=json_data).text)
+        try:
+            print (text,response['error'])
+        except:
+            break   
+    print (text,response)             
+    YOUR_EXPORT_ID = response['result']['projectExportId']
+    json_data = {
+        'method': 'getExportStatus',
+        'input': {
+            'projectExportId': YOUR_EXPORT_ID,
+        },
+    }
+    while True:
+        response = json.loads(requests.post('https://api-tts.vclip.io/json-rpc', headers=headers, json=json_data).text)
+        print (response)
+        if response['result']['state'] == 'completed':
+            return response['result']['url']    
+
+def fpt_tts(translate_mode,text, output_path, duration_ms, api_keys, speed, voice_name='banmai'):#banmai#minhquang
     if len(text) <3:
         text = str(text)+' !'
     while True:
-        for api_key in api_keys:
-            url = 'https://api.fpt.ai/hmi/tts/v5'    
-            headers = {
-                'api-key': api_key,
-                'speed': speed,
-                'voice': voice_name
-            }
-            response = requests.post(url, data=text.encode('utf-8'), headers=headers)
-            print (response.text)
-            if response.status_code == 200:
-                url = json.loads(response.text)['async']
+        if translate_mode == 'fpt':
+            for api_key in api_keys:
+                url = 'https://api.fpt.ai/hmi/tts/v5'    
+                headers = {
+                    'api-key': api_key,
+                    'speed': speed,
+                    'voice': voice_name
+                }
+                response = requests.post(url, data=text.encode('utf-8'), headers=headers)
+                print (response.text)
+                if response.status_code == 200:
+                    url = json.loads(response.text)['async']
+                    with open ('url_fpt_out_put_backurl.txt','a') as f:
+                        f.write(output_path+'_'+url+'_'+str(duration_ms)+'\n');f.close()
+                        return
+        elif translate_mode == 'vclip':            
+            for api_key in api_keys:
+                url = ai_vclip_voice(api_key,text)  
+                print (url)              
                 with open ('url_fpt_out_put_backurl.txt','a') as f:
                     f.write(output_path+'_'+url+'_'+str(duration_ms)+'\n');f.close()
-                    return
-def thread_saving_video_fpt(detail):
-    try:
-        # 1. Parse dữ liệu
-        parts = detail.strip().split('_')
-        # Giả sử format: path1_path2_url_duration
-        output_path = f"{parts[0]}_{parts[1]}"
-        url = parts[2]
-        target_duration_ms = float(parts[3])
-        
-        # Đảm bảo thư mục base tồn tại
-        out_put_base = output_path.replace('/tts/', '/tts_base/')
-        os.makedirs(os.path.dirname(out_put_base), exist_ok=True)
-
-        for i in range(10): # Thử 10 lần, mỗi lần cách nhau 1-2 giây
-            response = requests.get(url, stream=True, timeout=10)
+                    return      
+def thread_saving_video_fpt(detail,type_tts):
+    print ('Lưu video audio fpt or vclip về máy',type_tts,type(type_tts))
+    if type_tts =='fpt':
+        print ('Vô')
+        try:
+            parts = detail.strip().split('_')
+            if len(parts) < 4: return
             
-            if response.status_code == 200:
-                with open(out_put_base, 'wb') as f:
-                    for chunk in response.iter_content(chunk_size=8192):
-                        f.write(chunk)
-                
-                # Kiểm tra xem file tải về có dung lượng không
-                if os.path.getsize(out_put_base) < 100: # File quá nhỏ thường là file lỗi
-                    time.sleep(2)
-                    continue
-
-                # 2. Tính toán tốc độ (Đưa về cùng đơn vị giây)
-                duration_seconds = get_duration(out_put_base)
-                target_duration_seconds = target_duration_ms / 1000
-                
-                # Công thức speed chuẩn
-                calculated_speed = duration_seconds / target_duration_seconds
-                
-                # Giới hạn speed theo ý bạn (ví dụ 1.0 đến 1.3)
-                final_speed = max(1.0, min(1.3, calculated_speed))
-                
-                # 3. Chạy hàm speed_up
-                speed_up_video(out_put_base, final_speed, output_path)
-                print(f"Done: {output_path} | Speed: {final_speed:.2f}")
-                return # Thành công thì thoát hàm
+            output_path = f"{parts[0]}_{parts[1]}"
+            url = parts[2]
+            target_duration_ms = float(parts[3])
             
-            else:
-                print(f"Lần thử {i+1}: Server chưa trả file (Code: {response.status_code})")
-                time.sleep(2) # Đợi 2 giây trước khi thử lại
-                
-    except Exception as e:
-        print(f"Lỗi thực thi thread: {e}")
+            out_put_base = output_path
+            os.makedirs(os.path.dirname(out_put_base), exist_ok=True)
 
+            # Tải file từ server FPT
+            for i in range(15): # Tăng số lần thử lên 15
+                response = requests.get(url, stream=True, timeout=20)
+                if response.status_code == 200:
+                    with open(out_put_base, 'wb') as f:
+                        f.write(response.content)
+                    
+                    if os.path.exists(out_put_base) and os.path.getsize(out_put_base) > 500:
+                        break
+                time.sleep(3) # Đợi server FPT render file xong
+
+            # Sau khi tải xong, tiến hành ép tốc độ
+            duration_seconds = get_duration(out_put_base)
+            if duration_seconds == 0:
+                print(f"❌ File {out_put_base} hỏng hoặc không tải được.")
+                return
+
+            target_duration_seconds = target_duration_ms / 1000
+            calculated_speed = duration_seconds / target_duration_seconds
+            
+            # FFmpeg filter atempo tối đa 2.0, nên nếu > 2.0 phải nối chuỗi
+            speed_up_video(out_put_base, calculated_speed, output_path)
+            print(f"✅ Thành công: {output_path}")
+
+        except Exception as e:
+            print(f"🔥 Lỗi nghiêm trọng tại thread_saving: {e}")
+    elif type_tts=='vclip':
+        try:
+            parts = detail.strip().split('_')
+            if len(parts) < 4: return
+            
+            output_path = f"{parts[0]}_{parts[1]}"
+            url = f"{parts[2]}_{parts[3]}"
+            target_duration_ms = float(parts[4])
+            
+            out_put_base = output_path
+            os.makedirs(os.path.dirname(out_put_base), exist_ok=True)
+
+            # Tải file từ server FPT
+            for i in range(15): # Tăng số lần thử lên 15
+                response = requests.get(url, stream=True, timeout=20)
+                if response.status_code == 200:
+                    with open(out_put_base, 'wb') as f:
+                        f.write(response.content)
+                    
+                    if os.path.exists(out_put_base) and os.path.getsize(out_put_base) > 500:
+                        break
+                time.sleep(3) # Đợi server FPT render file xong
+
+            # Sau khi tải xong, tiến hành ép tốc độ
+            duration_seconds = get_duration(out_put_base)
+            if duration_seconds == 0:
+                print(f"❌ File {out_put_base} hỏng hoặc không tải được.")
+                return
+
+            target_duration_seconds = target_duration_ms / 1000
+            calculated_speed = duration_seconds / target_duration_seconds
+            
+            # FFmpeg filter atempo tối đa 2.0, nên nếu > 2.0 phải nối chuỗi
+            speed_up_video(out_put_base, calculated_speed, output_path)
+            print(f"✅ Thành công: {output_path}")
+
+        except Exception as e:
+            print(f"🔥 Lỗi nghiêm trọng tại thread_saving: {e}")                    
 def download_and_export_dual_formats(video_id, json_output_path, srt_dir='srt'):
     video_url = f'https://www.youtube.com/watch?v={video_id}'
     temp_vtt_name = f'temp_{video_id}'
@@ -883,9 +1026,9 @@ def dub_movie(input_video_path, output_dir, api_keys, source_language, target_la
     setup_directories(temp_dir)
     setup_directories(output_dir)
     setup_directories(output_sub_dir)
-    if target_id_video_bil.find('https://www.youtube.com') >=0:
-        download_and_export_dual_formats(target_id_video_bil.replace('https://www.youtube.com/shorts/',''), translated_json_path)
-    else:
+    #if target_id_video_bil.find('https://www.youtube.com') >=0:
+    #    download_and_export_dual_formats(target_id_video_bil.replace('https://www.youtube.com/shorts/',''), translated_json_path)
+    if True:
         print("Step 1: Extracting speech content...")
         if not check_volume_of_file(checkpoint_transcript_file, 2048):
             metadata_list = load_checkpoint(checkpoint_transcript_file)['segments']        
@@ -901,7 +1044,6 @@ def dub_movie(input_video_path, output_dir, api_keys, source_language, target_la
             None    
     print ('DỊCH SỐ FILE SRT CẦN DỊCH:', len(srt_files))
     if srt_files:
-        #print (api_keys)
         translate_with_gemini(api_keys, srt_files, target_language, output_sub_dir)   
     for srt_path in glob(os.path.join(output_sub_dir, '*.srt')):
         metadata_list.extend(filter_srt_detail(srt_path))   
@@ -916,7 +1058,11 @@ def dub_movie(input_video_path, output_dir, api_keys, source_language, target_la
         if os.path.exists(checkpoint_dub_file):
             checkpoint_dub=load_checkpoint(checkpoint_dub_file)['segments']
             list_start_time_complete = [i['start_time'] for i in checkpoint_dub if i['status'] == 'completed']        
-        metadata_list = [i for i in metadata_list if i['start_time'] not in list_start_time_complete]
+        metadata_list = [i for i in metadata_list if i['start_time'] not in list_start_time_complete];api_keys=[]
+        if type_tts == 'fpt':
+            api_keys=['NUkcBOc2wujsRErJ3PCGXmuZmt9hkIt2','Bn5q6fvXe5kaao1RaE1xKCfyU9sfRc3s','5OEDPYSmHyKEun04GRRhy5rDWDmvbpi4','jZZrH1LJtI3TlpaLiskcs4imdW3ZEWcz','90Rc9Olnrmpe5WE9aNsXaK7AeMSvCNd6','lJkoOxVwZ54pbhU9EVZOa2WO9NviS2jr','bES2wLGABlYCFA0xUDsbiDqCYEWdtnDh','n9rKtRYQWtT39nCBil4o9JsQsvZEyRDP','WDJxtVTv3EOUbpeXWszOd6WkxWs9LGJQ','pjLFlJzmN4yaYcZPHP2wwMMIx0Pn5lBh','jJ3vZAnoo6l93yoA58g4UYqUKgB3dCrA','pRpfjNY1nBoWbBDanWJQ3ZOzR7LhuThB']
+        elif type_tts == 'vclip':
+            api_keys=['sk_live_fynsdhLsb9P7q2LcWJvkrdmoc04tGoRp']
         max_workers = min(os.cpu_count() or 2, 2)
         with ThreadPoolExecutor(max_workers=20) as executor:
             future_to_segment = {
@@ -928,18 +1074,19 @@ def dub_movie(input_video_path, output_dir, api_keys, source_language, target_la
                     segment["text"],
                     target_language,
                     tts_forder_save_path,
-                    ['n9rKtRYQWtT39nCBil4o9JsQsvZEyRDP','WDJxtVTv3EOUbpeXWszOd6WkxWs9LGJQ','pjLFlJzmN4yaYcZPHP2wwMMIx0Pn5lBh','jJ3vZAnoo6l93yoA58g4UYqUKgB3dCrA','pRpfjNY1nBoWbBDanWJQ3ZOzR7LhuThB'],
+                    api_keys,
                     type_tts
                 ): segment
                 for segment in metadata_list
             }
         # Đọc danh sách URL nếu sử dụng type_tts là 'fpt'
         if len(metadata_list)!=0:
-            if type_tts == 'fpt':
+            if type_tts == 'fpt' or type_tts == 'vclip':
                 with open('url_fpt_out_put_backurl.txt', 'r') as f:
                     list_url_fpt = f.readlines() 
                 with ThreadPoolExecutor(max_workers=20) as executor:
-                    executor.map(thread_saving_video_fpt, list_url_fpt)          
+                    for url in list_url_fpt:
+                        executor.submit(thread_saving_video_fpt, url, type_tts)          
         # Kết hợp metadata từ các kết quả
         new_metadata = []
         for future in as_completed(future_to_segment):
@@ -1689,29 +1836,113 @@ def send_key_vietnamese(text,device_port_ip):
     d.set_fastinput_ime(False) # Trả về bàn phím cũ sau khi xong    
 
 def get_douyin_video_src(url):
+    proxy_format=get_and_use_proxy()
     with sync_playwright() as p:
         # Mở trình duyệt (headless=True nếu bạn không muốn hiện cửa sổ)
-        browser = p.chromium.launch(headless=False)
+        browser = p.chromium.launch(headless=True)
         page = browser.new_page()
         
         # Truy cập vào link video
         page.goto(url)
         
         # Chờ một chút để player kịp load dữ liệu
-        page.wait_for_timeout(3000) 
-
+        page.wait_for_timeout(6000) 
         # Thực hiện đoạn code "console" của bạn
         try:
             video_src = page.evaluate("player.videoList[0].playAddr[0].src")
             return video_src
         except Exception as e:
             print("Không tìm thấy biến player. Có thể trang web đã thay đổi cấu trúc.")
-        
+        #i=input('player.videoList[0].playAddr[0].src')
         browser.close()
+
+def get_local_ip():
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.connect(('8.8.8.8', 1))
+        ip = s.getsockname()[0]
+    except Exception:
+        ip = '127.0.0.1'
+    finally:
+        s.close()
+    return ip
+class MyHandler(http.server.SimpleHTTPRequestHandler):
+    def end_headers(self):
+        # Header giúp Chrome hiểu đây là file tải về, không phải nội dung xem trực tiếp
+        self.send_header('Content-Disposition', 'attachment')
+        super().end_headers()
+
+class ThreadedTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
+    allow_reuse_address = True
+
+def run_server(httpd):
+    httpd.serve_forever()
+
+def xong_luon(video_name, phone_id, pc_ip):
+    PORT = 8000
+    # Đảm bảo đường dẫn file là tương đối so với nơi chạy script
+    # Ví dụ: Sourse_Videos/subed_1_video.mp4
+    
+    with ThreadedTCPServer(("", PORT), MyHandler) as httpd:
+        video_path=video_name.replace('\\','/')
+        server_thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+        server_thread.start()
+        print(f"--- Server đang chạy tại http://{pc_ip}:{PORT} ---")
+
+        file_only = os.path.basename(video_name)
+        url = f"http://{pc_ip}:{PORT}/{video_path}"
+        print (url)
+        # Lệnh tải file bằng ADB (Dùng curl hoặc wget tích hợp trong Android)
+        print(f"--- Đang ra lệnh cho {phone_id} tải file qua ADB shell ---")
+        
+        # Cách 1: Mở Chrome (như bạn đang làm)
+        # Thêm tham số package của Chrome
+        run_adb_command(f'adb -s {phone_id} shell am start -n com.android.chrome/com.google.android.apps.chrome.Main -d "https://www.google.com/recaptcha/api2/demo"')
+        run_adb_command(f'adb -s {phone_id} shell am start -n com.android.chrome/com.google.android.apps.chrome.Main -d "{url}"')
+        
+        # Cách 2 (Khuyên dùng): Tải ngầm bằng curl (nếu máy có sẵn) để chính xác hơn
+        # run_adb_command(f'adb -s {phone_id} shell curl -o /sdcard/Download/{file_only} {url}')
+
+        # Đợi tải...
+        is_finished = False
+        for i in range(30): 
+            time.sleep(5)
+            check_cmd = run_adb_command(f'adb -s {phone_id} shell ls /sdcard/Download/')
+            if file_only in check_cmd:
+                # Kiểm tra thêm nếu file .crdownload (đang tải) đã biến mất chưa
+                if ".crdownload" not in check_cmd:
+                    print(f"==> [OK] Đã tải xong: {file_only}")
+                    is_finished = True
+                    break
+            print(f"[{i}] Đang đợi điện thoại tải file...")
+
+        httpd.shutdown()
 
 def clear_folder(dir_path):
     if os.path.exists(dir_path):
         shutil.rmtree(dir_path)    
+
+def merge_and_trim_audio(video_input, audio_input, video_output):
+    # CHỈNH Ở ĐÂY: 0.1 là bé tí, 0.5 là vừa, 1.0 là giữ nguyên
+    mp3_vol = 0.2 
+    
+    # Gom hết vào một dòng filter cho gọn
+    # Giải thích: Lấy audio2 (file mp3) giảm volume -> trộn với audio1 (video) -> cắt theo video
+    filter_cmd = f"[1:a]volume={mp3_vol}[bg];[0:a][bg]amix=inputs=2:duration=first:dropout_transition=0[aout]"
+
+    command = [
+        'ffmpeg', '-i', video_input, '-i', audio_input,
+        '-filter_complex', filter_cmd,
+        '-map', '0:v:0', '-map', '[aout]',
+        '-c:v', 'copy', '-c:a', 'aac', '-shortest', '-y', 
+        video_output
+    ]
+
+    try:
+        subprocess.run(command, check=True, capture_output=True)
+        print(f"✅ Xong! Đã thêm âm thanh vào video: {video_output}")
+    except subprocess.CalledProcessError as e:
+        print(f"❌ Toang rồi: {e.stderr.decode()}")
 
 if __name__ == "__main__":
     try:
@@ -1724,10 +1955,12 @@ if __name__ == "__main__":
             print("Đã tìm thấy thiết bị mạng. Đang thoát...",device_port_ip)
         else:
             while True:
-                device_port_ip=input('Nhập ip-port thiết bị (*ví dụ 192:168.1.11:38287) : ')  
-                status=subprocess.check_output(f'adb connect {device_port_ip}',text=True)      
+                device_port_ip=input('Nhập ip-port thiết bị (*ví dụ 192:168.1.11:38287) : ')
+                subprocess.run('adb kill-server',check=True)  
+                status=subprocess.check_output(f'adb connect {device_port_ip}',text=True)    
+                print (status)  
                 if status.find('connected to') >=0:
-                    subprocess.run('adb tcpip 5555',check=True)
+                    subprocess.run(f'adb -s {device_port_ip} tcpip 5555',check=True)
                     device_port_ip=str(device_port_ip.split(':')[0])+':5555'
                     subprocess.run(f'adb connect {device_port_ip}',check=True)
                     break
@@ -1789,18 +2022,28 @@ if __name__ == "__main__":
                     print ("Downloading video from Douyin...")
                     setup_directories('Videos')
                     with open('Videos/video.mp4', 'wb') as f:
-                        try:
-                            link_dowload_video_douyin=get_douyin_video_src(target_id_video_bil)
-                            print ('LINK DOWLOAD VIDEO CỦA BẠN : '+link_dowload_video_douyin)  
-                        except:    
-                            link_dowload_video_douyin=(save_video_douyin(target_id_video_bil)) 
-                            print ('LINK DOWLOAD VIDEO CỦA BẠN : '+link_dowload_video_douyin)
+                        while True:                            
+                            try:
+                                link_dowload_video_douyin=get_douyin_video_src(target_id_video_bil)
+                                print ('LINK DOWLOAD VIDEO CỦA BẠN : '+link_dowload_video_douyin)  
+                                if link_dowload_video_douyin != None:
+                                    break
+                            except:   
+                                link_dowload_video_douyin=(save_video_douyin(target_id_video_bil)) 
+                                print ('LINK DOWLOAD VIDEO CỦA BẠN : '+link_dowload_video_douyin)
+                                if link_dowload_video_douyin !=None:
+                                    break
                         while True:
                             try:
-                                content_from_link_dowload_video_dy=requests.get(link_dowload_video_douyin).content    
+                                proxy_format=get_and_use_proxy()    
+                                proxies = {
+                                    "http": proxy_format,
+                                    "https": proxy_format
+                                }
+                                content_from_link_dowload_video_dy=requests.get(link_dowload_video_douyin,proxies=proxies).content    
                                 break 
                             except:
-                                time.sleep(60)                 
+                                time.sleep(10)                 
                         f.write(content_from_link_dowload_video_dy)                    
                 else:
                     setup_directories('Videos')
@@ -1839,6 +2082,8 @@ if __name__ == "__main__":
             srt_content = convert_detail(segments, srt_content, counter)
             with open ('srt_content.txt', 'w', encoding='utf-8') as f:
                 f.write(srt_content)
+            if srt_content=='':
+                continue    
             with open(srt_path, 'a', encoding='utf-8') as f:
                 f.write(srt_content)
             print(f"File phụ đề SRT đã được tạo tại: {srt_path}")
@@ -1848,20 +2093,27 @@ if __name__ == "__main__":
                 data = [o for o in json.load(file)['segments'] if o != None]
                 file.close()
             # Tạo danh sách các input audio và thời gian bắt đầu
-            audio_inputs = []
+            audio_inputs = [];setup_directories('tts_speeded')
             for segment in data:
                 index = segment['start_time']
                 start_time = segment['start_time']
+                end_time = segment['end_time']
                 audio_path = segment['output_path']
                 
                 # Kiểm tra xem file audio có tồn tại không
                 if os.path.exists(audio_path):
+                    #tăng tốc đoạn âm thanh audio                    
+                    speed=float(get_duration(audio_path))/(float(end_time)-float(start_time));audio_path_speeded=audio_path.replace('tts\\','tts_speeded\\') 
+                    speed_up_video(audio_path, speed, audio_path_speeded)
                     audio_inputs.append({
-                        'audio_path': audio_path,
-                        'start_time': start_time
+                        'audio_path': audio_path_speeded,
+                        'start_time': start_time,
+                        'end_time': end_time
                     })
+                    print ('Đã tăng tốc file âm thanh',audio_path_speeded)
                 else:
                     print(f"File {audio_path} không tồn tại, bỏ qua đoạn này.")
+                   
             # Xây dựng lệnh ffmpeg
             ffmpeg_cmd = [
                 'ffmpeg',
@@ -1932,21 +2184,33 @@ if __name__ == "__main__":
                     print("✅ Hoàn tất! Video đã được chèn phụ đề.")
                 except subprocess.CalledProcessError as e:
                     print("❌ Lỗi khi chạy FFmpeg:", e)  
+
 #            #upload_video_to_youtube_automation(category,'HƯỚNG DẪN LÀM SLIME TẠI NHÀ .🍓',description,keywords,privacy_status,output_video,CLIENT_SECRETS_FILE,SCOPES,RETRIABLE_STATUS_CODES,MAX_RETRIES,RETRIABLE_EXCEPTIONS)              
+            #setup_directories('output')
+            #merge_and_trim_audio(output_video, 'music_bg/music.mp3', output_video.replace('Sourse_Videos', 'output'))
             
-            upgrade_to_60fps_mci(output_video.replace("\\",'/'), (output_video.replace("\\",'/')).replace('Sourse_Videos','output'))
-            # Ví dụ: Liệt kê thiết bị
-            formatted_path = output_video.replace("\\", "/").replace('Sourse_Videos', 'output')
-            print (f'adb -s {device_port_ip} push {formatted_path} /sdcard/DCIM/Camera/')
-            run_adb_command(f'adb -s {device_port_ip} push {formatted_path} /sdcard/DCIM/Camera/')           
-            ft_path=formatted_path.replace('output','')
-            print (f'adb -s {device_port_ip} shell content insert --uri content://media/external/video/media --bind _data:s:/sdcard/DCIM/Camera{ft_path}')
-            run_adb_command(f'adb -s {device_port_ip} shell content insert --uri content://media/external/video/media --bind _data:s:/sdcard/DCIM/Camera{ft_path}')
-            content_text=(f'Em họ tôi sang nhà tôi phải làm sao. Nhờ cđm cứu tôi. P{str(len(check_point_id_video_completed)+1)} ');status = check_screen()            
-            if status == 'OFF':
+            status = run_adb_command(f'adb -s {device_port_ip} shell "dumpsys display | grep mScreenState"')
+            if status.find('ON') < 0:
                 run_adb_command(f'adb -s {device_port_ip} shell input keyevent 26')
+            #setup_directories('output');upgrade_to_60fps_mci(output_video.replace("\\",'/'), (output_video.replace("\\",'/')).replace('Sourse_Videos','output'))
+            # Ví dụ: Liệt kê thiết bị
+            formatted_path = output_video.replace("\\", "/")#.replace('Sourse_Videos', 'output')
+            pc_ip=get_local_ip()    
+
+            run_adb_command('adb shell input keyevent 3')
+            xong_luon(formatted_path, device_port_ip, pc_ip)
+            print ('Video Đã được tải ')
+            run_adb_command('adb shell input keyevent 3')
+            print ('Tiếp tục')
+            #print (f'adb -s {device_port_ip} push {formatted_path} /sdcard/DCIM/Camera/')
+            #run_adb_command(f'adb -s {device_port_ip} push {formatted_path} /sdcard/DCIM/Camera/')           
+            #ft_path=formatted_path.replace('output','')
+            #print (f'adb -s {device_port_ip} shell content insert --uri content://media/external/video/media --bind _data:s:/sdcard/DCIM/Camera{ft_path}')
+            #run_adb_command(f'adb -s {device_port_ip} shell content insert --uri content://media/external/video/media --bind _data:s:/sdcard/DCIM/Camera{ft_path}')
+            content_text=(f'Chó con đáng yêu. P{str(len(check_point_id_video_completed)+1)} ');status = check_screen()            
+            
             run_adb_command(f'adb -s {device_port_ip} shell am start -a android.intent.action.VIEW -d "https://www.tiktok.com/"')
-            time.sleep(5)            
+            time.sleep(10)            
             get_android_data(device_port_ip);json_output = xml_to_json('view.xml');json_output = json.loads(xml_to_json('view.xml'))
             posision_located=([element['bounds'] for element in (json_output) if element['content-desc']=="Quay"][0]).split(']')
             x1,y1= (((posision_located[0])[1:99]).split(','))
@@ -1954,7 +2218,7 @@ if __name__ == "__main__":
             run_adb_command(f'adb -s {device_port_ip} shell input tap {(int(x1)+int(x2))/2} {(int(y1)+int(y2))/2}')
             time.sleep(5)            
             get_android_data(device_port_ip);json_output = json.loads(xml_to_json('view.xml'))
-            posision_located=([element['bounds'] for element in (json_output) if element['resource-id']=='com.ss.android.ugc.trill:id/l0y'][0]).split(']')
+            posision_located=([element['bounds'] for element in (json_output) if element['index']=='0' and element['text']=='' and element['resource-id']=='' and element['class']=='android.widget.RelativeLayout' and element['package']=='com.ss.android.ugc.trill' and element['content-desc']==''][0]).split(']')
             x1,y1= (((posision_located[0])[1:99]).split(','))
             x2,y2= (((posision_located[1])[1:99]).split(','))
             run_adb_command(f'adb -s {device_port_ip} shell input tap {(int(x1)+int(x2))/2} {(int(y1)+int(y2))/2}')
@@ -1966,24 +2230,75 @@ if __name__ == "__main__":
             run_adb_command(f'adb -s {device_port_ip} shell input tap {(int(x1)+int(x2))/2} {(int(y1)+int(y2))/2}')
             time.sleep(3)
             get_android_data(device_port_ip);json_output = json.loads(xml_to_json('view.xml'))
-            posision_located=([element['bounds'] for element in (json_output) if element['resource-id']=='com.ss.android.ugc.trill:id/mzz'][0]).split(']')
+            posision_located=([element['bounds'] for element in (json_output) if element['resource-id']=='com.ss.android.ugc.trill:id/n8g'][0]).split(']')
             x1,y1= (((posision_located[0])[1:99]).split(','))
             x2,y2= (((posision_located[1])[1:99]).split(','))
             run_adb_command(f'adb -s {device_port_ip} shell input tap {(int(x1)+int(x2))/2} {(int(y1)+int(y2))/2}')
             time.sleep(3)
-            create_folder('image');get_android_data(device_port_ip);draw_elements();
-            x1,y1,x2,y2=(find_possition('Tiếp'));clear_folder('image')
+            get_android_data(device_port_ip);json_output = json.loads(xml_to_json('view.xml'))
+            posision_located=([element['bounds'] for element in (json_output) if element['text']=='Tiếp'][0]).split(']')
+            x1,y1= (((posision_located[0])[1:99]).split(','))
+            x2,y2= (((posision_located[1])[1:99]).split(','))
             run_adb_command(f'adb -s {device_port_ip} shell input tap {int((int(x1)+int(x2))/2)} {int((int(y1)+int(y2))/2)}')
             time.sleep(5)
+            if True:
+                try:
+                    print ('Thêm nhạc vào video')
+                    time.sleep(3)
+                    get_android_data(device_port_ip);json_output = json.loads(xml_to_json('view.xml'))
+                    posision_located=([element['bounds'] for element in (json_output) if element['content-desc']=='Nhạc'][0]).split(']')
+                    x1,y1= (((posision_located[0])[1:99]).split(','))
+                    x2,y2= (((posision_located[1])[1:99]).split(','))
+                    run_adb_command(f'adb -s {device_port_ip} shell input tap {(int(x1)+int(x2))/2} {(int(y1)+int(y2))/2}')
+                    time.sleep(3)   
+                    get_android_data(device_port_ip);json_output = json.loads(xml_to_json('view.xml'))
+                    posision_located=([element['bounds'] for element in (json_output) if element['content-desc']=='Tìm kiếm'][0]).split(']')
+                    x1,y1= (((posision_located[0])[1:99]).split(','))
+                    x2,y2= (((posision_located[1])[1:99]).split(','))
+                    run_adb_command(f'adb -s {device_port_ip} shell input tap {(int(x1)+int(x2))/2} {(int(y1)+int(y2))/2}')
+                    time.sleep(3)     
+                    get_android_data(device_port_ip);json_output = json.loads(xml_to_json('view.xml'))
+                    posision_located=([element['bounds'] for element in (json_output) if element['class']=='android.widget.EditText' and element['package']=='com.ss.android.ugc.trill' and element['content-desc']=='' and element['checkable']=='false' and element['checked']=='false' and element['clickable']=='true' and element['enabled']=='true' and element['focusable']=='true' and element['focused']=='true' and element['scrollable']=='false' and element['long-clickable']=='true' and element['password']=='false' and element['selected']=='false' and element['visible-to-user']=='true'][0]).split(']')
+                    x1,y1= (((posision_located[0])[1:99]).split(','))
+                    x2,y2= (((posision_located[1])[1:99]).split(','))
+                    run_adb_command(f'adb -s {device_port_ip} shell input tap {(int(x1)+int(x2))/2} {(int(y1)+int(y2))/2}')
+                    time.sleep(3)   
+                    send_key_vietnamese('Những cuộc đua thúng chài bên sông',device_port_ip)  
+                    time.sleep(3)
+                    get_android_data(device_port_ip);json_output = json.loads(xml_to_json('view.xml'))
+                    posision_located=([element['bounds'] for element in (json_output) if element['text']=='Tìm kiếm'][0]).split(']')
+                    x1,y1= (((posision_located[0])[1:99]).split(','))
+                    x2,y2= (((posision_located[1])[1:99]).split(','))
+                    run_adb_command(f'adb -s {device_port_ip} shell input tap {(int(x1)+int(x2))/2} {(int(y1)+int(y2))/2}')    
+                    time.sleep(20)
+                    get_android_data(device_port_ip);json_output = json.loads(xml_to_json('view.xml'))
+                    posision_located=([element['bounds'] for element in (json_output) if element['index']=='1' and element['text']=='' and element['resource-id']=='' and element['class']=='android.view.ViewGroup' and element['package']=='com.ss.android.ugc.trill' and element['content-desc']=='' and element['checkable']=='false' and element['checked']=='false' and element['clickable']=='false' and element['enabled']=='true' and element['focusable']=='true' and element['focused']=='false' and element['scrollable']=='false' and element['long-clickable']=='false' and element['password']=='false' and element['selected']=='false' and element['visible-to-user']=='true'][0]).split(']')
+                    x1,y1= (((posision_located[0])[1:99]).split(','))
+                    x2,y2= (((posision_located[1])[1:99]).split(','))
+                    run_adb_command(f'adb -s {device_port_ip} shell input tap {(int(x1)+int(x2))/2} {(int(y1)+int(y2))/2}')     
+                    time.sleep(3)
+                    get_android_data(device_port_ip);json_output = json.loads(xml_to_json('view.xml'))
+                    posision_located=([element['bounds'] for element in (json_output) if element['class']=='android.view.ViewGroup' and element['package']=='com.ss.android.ugc.trill' and element['content-desc']=='' and element['checkable']=='false' and element['checked']=='false' and element['clickable']=='false' and element['enabled']=='true' and element['focusable']=='false' and element['focused']=='false' and element['scrollable']=='false' and element['long-clickable']=='false' and element['password']=='false' and element['selected']=='false' and element['long-clickable']=='false' and element['password']=='false' and element['selected']=='false' and element['visible-to-user']=='true'][0]).split(']')
+                    x1,y1= (((posision_located[0])[1:99]).split(','))
+                    run_adb_command(f'adb -s {device_port_ip} shell input tap {x1} {y1}')  
+                    time.sleep(5) 
+                    get_android_data(device_port_ip);json_output = json.loads(xml_to_json('view.xml'))
+                    posision_located=([element['bounds'] for element in (json_output) if element['text']=='Tiếp'][0]).split(']')
+                    x1,y1= (((posision_located[0])[1:99]).split(','))
+                    x2,y2= (((posision_located[1])[1:99]).split(','))
+                except:
+                    None    
+            run_adb_command(f'adb -s {device_port_ip} shell input tap {int((int(x1)+int(x2))/2)} {int((int(y1)+int(y2))/2)}')
+            time.sleep(10)
             get_android_data(device_port_ip);json_output = json.loads(xml_to_json('view.xml'))
             posision_located=([element['bounds'] for element in (json_output) if element['text']=='Thêm mô tả...'][0]).split(']')
             x1,y1= (((posision_located[0])[1:99]).split(','))
             x2,y2= (((posision_located[1])[1:99]).split(','))
             run_adb_command(f'adb -s {device_port_ip} shell input tap {int((int(x1)+int(x2))/2)} {int((int(y1)+int(y2))/2)}')
-            #time.sleep(3)
+            time.sleep(5)
             send_key_vietnamese(content_text,device_port_ip)
             run_adb_command(f'adb -s {device_port_ip} shell input tap {int((int(x1)+int(x2))/2)} {int((int(y1)+int(y2))/2)}')
-            time.sleep(3)
+            time.sleep(5)
             get_android_data(device_port_ip);json_output = json.loads(xml_to_json('view.xml'))
             posision_located=([element['bounds'] for element in (json_output) if element['text']=='Đăng'][0]).split(']')
             x1,y1= (((posision_located[0])[1:99]).split(','))
@@ -1993,8 +2308,14 @@ if __name__ == "__main__":
             check_point_id_video_completed.append(target_id_video_bil)
             with open(complete_json_path, 'a') as f:
                 f.write(f'{target_id_video_bil}\n')
-                f.close() 
-            run_adb_command(f'adb -s {device_port_ip} shell input keyevent 26')                  
+                f.close()             
+            #run_adb_command(f'adb -s {device_port_ip} shell input keyevent 187') 
+            #time.sleep(3)
+            #run_adb_command(f'adb -s {device_port_ip} shell input swipe 500 1000 500 0')
+            #run_adb_command(f'adb -s {device_port_ip} shell am force-stop com.ss.android.ugc.trill')   
+            run_adb_command(f'adb -s {device_port_ip} shell input keyevent 26') 
+            run_adb_command(f'''adb -s {device_port_ip} shell "find /sdcard/ -name '*.mp4' -delete"''')
+         
         except Exception as e:    
             print (e)
  
